@@ -9,17 +9,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Load env vars from .env
-dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
-load_dotenv(dotenv_path=dotenv_path)
-langchain_api_key = os.getenv("LANGCHAIN_API_KEY")
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if langchain_api_key:
-    os.environ["LANGCHAIN_API_KEY"] = langchain_api_key
-if openai_api_key:
-    os.environ["OPENAI_API_KEY"] = openai_api_key
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-
 def build_template_retriever(template: str):
     """Build a retriever for the passed-in template string."""
     documents = [Document(page_content=template)]
