@@ -9,6 +9,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Load env vars from .env
+dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(dotenv_path=dotenv_path)
+langchain_api_key = os.getenv("LANGCHAIN_API_KEY")
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if langchain_api_key:
+    os.environ["LANGCHAIN_API_KEY"] = langchain_api_key
+if openai_api_key:
+    os.environ["OPENAI_API_KEY"] = openai_api_key
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
 
 def build_template_retriever(template: str):
     """Build a retriever for the passed-in template string."""
@@ -18,6 +28,41 @@ def build_template_retriever(template: str):
     embedding = OpenAIEmbeddings()
     vectorstore = Chroma.from_documents(docs, embedding)
     return vectorstore.as_retriever()
+
+def generate_fs_from_requirement(
+    requirement: str,
+    fs_template: str
+) -> str:
+    """
+    Given requirement, and a template (provided by the user each call),
+    use RAG retrieval of template and generate a doc strictly following it.
+    """
+    retriever = build_template_retriever(fs_template)
+    retrieved_docs = retriever.get_relevant_documents(requirement)
+    # Should always retrieve the template, since it's the only doc.
+    retrieved_template = "\n\n".join(doc.page_content for doc in retrieved_docs)
+    if not retrieved_template.strip():
+        return "No functional specification template found in RAG."
+
+    prompt_template = ChatPromptTemplate.from_template(
+       "You are an SAP Functional Consultant. Strictly use the TEMPLATE structure and headings provided below.\n\n"
+    "REQUIREMENT:\n{requirement}\n\n"
+    "TEMPLATE (STRICTLY FOLLOW):\n{fs_template}\n\n"
+    "Write a Functional Specification Document for business stakeholders, strictly following the TEMPLATE headings and order.\n\n"
+    "⚠️ Format all headings with hierarchical numbering (e.g., 1., 1.1., 2.1.1, etc.).\n"
+    "⚠️ Do NOT use Markdown headings (no #, ##, etc.).\n"
+    "⚠️ Do NOT miss any headings and sub heading (if empty mark it NULL or NA).\n"
+    "⚠️ Use tables where appropriate: format as grid tables using tabs or clear alignment, compatible with MS Word.\n\n"
+    "Ensure the document is professional, readable, and copy-paste ready for MS Word formatting."
+    )
+    messages = prompt_template.format_messages(
+        requirement=requirement,
+        fs_template=retrieved_template
+    )
+
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.4)
+    response = llm.invoke(messages)
+    return response.content if hasattr(response, "content") else str(response)
 
 
 def generate_ts_from_requirement(
@@ -36,28 +81,16 @@ def generate_ts_from_requirement(
         return "No technical specification template found in RAG."
 
     prompt_template = ChatPromptTemplate.from_template(
-    "You are an experienced SAP Technical Architect. Your task is to create a detailed Technical Design Document (TDD) for developers, "
-    "based on the REQUIREMENT below. Strictly follow the structure and headings of the provided TEMPLATE. Every section must be included, "
-    "using the exact section numbering, titles, and subheadings as defined in the TEMPLATE.\n\n"
-    
+        "You are an SAP Technical Consultant. Strictly use the TEMPLATE structure and headings provided below.\n\n"
     "REQUIREMENT:\n{requirement}\n\n"
-    
-    "TECHNICAL DESIGN DOCUMENT TEMPLATE (STRICTLY FOLLOW):\n{ts_template}\n\n"
-    
-    "INSTRUCTIONS:\n"
-    "1. Use precise technical terminology relevant to SAP ABAP, SAP RAP, CDS views, behavior definitions, projection views, tables, structures, fields, actions, enhancements, and integrations as appropriate to the business requirement.\n"
-    "2. Each section must be actionable, detailed, and directly usable by a developer to implement the solution.\n"
-    "3. Provide clear logic description, including process flow, data model relationships, entity keys, joins, associations, and method responsibilities where relevant.\n"
-    "4. For validations, actions, and business logic, explain conditions, invocation points, and error handling mechanisms in the TDD section.\n"
-    "5. Specify RAP constructs in context (e.g., managed/unmanaged scenarios, drafts, EML usage, RAP handler methods).\n"
-    "6. When interface or integration logic is involved, include interface details, data mapping, and external system touchpoints.\n"
-    "7. Use structured, hierarchical numbering for all headings (e.g., 1., 1.1., 2.1.1, etc.).\n"
-    "8. Do not use Markdown formatting (no #, ##, etc.)—use plain text, compatible with MS Word and SAP documentation standards.\n"
-    "9. Do not omit or rename any heading or subheading from the template—even if content is not applicable, populate with 'NA'.\n"
-    "10. Use tabular formatting for entity fields, keys, and mappings, using tabs or clear cell alignment for easy copy-paste to MS Word.\n\n"
-    
-    "Deliver a professional, fully detailed, and implementation-ready Technical Design Document. Output ONLY the completed TDD in plain text—do not provide any explanations, formatting notes, or Markdown."
-)
+    "TEMPLATE (STRICTLY FOLLOW):\n{ts_template}\n\n"
+    "Write a Technical Specification Document for business stakeholders, strictly following the TEMPLATE headings and order.\n\n"
+    "⚠️ Format all headings with hierarchical numbering (e.g., 1., 1.1., 2.1.1, etc.).\n"
+    "⚠️ Do NOT use Markdown headings (no #, ##, etc.).\n"
+    "⚠️ Do NOT miss any headings and sub heading (if empty mark it NULL or NA).\n"
+    "⚠️ Use tables where appropriate: format as grid tables using tabs or clear alignment, compatible with MS Word.\n\n"
+    "Ensure the document is professional, readable, and copy-paste ready for MS Word formatting."
+    )
     messages = prompt_template.format_messages(
         requirement=requirement,
         ts_template=retrieved_template
@@ -84,25 +117,14 @@ def generate_abap_code_from_requirement(
         return "No ABAP template found in RAG."
 
     prompt_template = ChatPromptTemplate.from_template(
-    "You are an expert ABAP RAP (Restful ABAP Programming Model) developer. "
-    "You are responsible for delivering a complete, production-grade RAP implementation."
-    " Strictly use the TEMPLATE structure, sections, RAP framework annotations, and comments provided below as your authoritative blueprint.\n\n"
-
+        "You are an expert ABAP developer. Strictly use the TEMPLATE structure and comments provided below as a template.\n\n"
     "REQUIREMENT:\n{requirement}\n\n"
-
-    "RAP ABAP CODE TEMPLATE (STRICTLY FOLLOW):\n{abap_template}\n\n"
-
-    "INSTRUCTIONS:"
-    "\n- Your output must include all necessary RAP artifacts to fulfill the requirement: "
-    "the RAP handler class, the root CDS view, child CDS view(s), projection CDS view(s), behavior definition, draft table definition, associations, and any other objects required for a functional ABAP RAP solution (as prescribed by the template)."
-    "\n- Strictly comply with the TEMPLATE's structure, code layout, RAP managed/unmanaged implementation patterns, annotations, CDS view/entity design, behavior definitions, class implementation sections, method headers, and all template comments."
-    "\n- Do not add, omit, rename, or re-order code sections not present in the template. Use only sanctioned modern, idiomatic ABAP and RAP best practices."
-    "\n- Ensure the code is end-to-end RAP-ready and uses only sections present in the template, including all provided code segments such as: "
-    "CDS view syntax, behavior definition, handler class (with all method skeletons), and associations."
-    "\n- If the template includes comment placeholders, fill them with appropriate ABAP code per the requirement."
-    "\n- Do NOT use Markdown or code fence formatting. Do NOT add any explanations or extra text."
-    "\n- The response MUST be ABAP code only, precisely and exclusively following the structure of the RAP CODE TEMPLATE."
-)
+    "ABAP CODE TEMPLATE (STRICTLY FOLLOW):\n{abap_template}\n\n"
+    "Write production-ready, well-commented ABAP code to fulfill the REQUIREMENT above. "
+    "Strictly follow the CODE TEMPLATE structure, style, headers, and comments. "
+    "Do not add or omit code sections that are in the template. Use modern, readable ABAP and include meaningful comments. "
+    "Only output the ABAP code. Do not use Markdown or code fences."
+    )
     messages = prompt_template.format_messages(
         requirement=requirement,
         abap_template=retrieved_template

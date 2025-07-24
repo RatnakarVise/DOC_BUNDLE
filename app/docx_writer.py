@@ -156,6 +156,9 @@ def generate_doc(ts_text: str, file_obj: BytesIO, title: str):
 # Public API Functions for FS, TS, ABAP
 # ----------------------------------------
 
+def create_functional_spec_docx(fs_text: str, file_obj: BytesIO):
+    generate_doc(fs_text, file_obj, title="FUNCTIONAL SPECIFICATION")
+
 def create_technical_spec_docx(ts_text: str, file_obj: BytesIO):
     generate_doc(ts_text, file_obj, title="TECHNICAL SPECIFICATION")
 
