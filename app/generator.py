@@ -49,7 +49,7 @@ def generate_fs_from_requirement(
         fs_template=retrieved_template
     )
 
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.4)
+    llm = ChatOpenAI(model="gpt-4.1", temperature=0.3)
     response = llm.invoke(messages)
     return response.content if hasattr(response, "content") else str(response)
 
